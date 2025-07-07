@@ -1,0 +1,14 @@
+{
+  "name": "sync-json-keys",
+  "version": "1.0.0",
+  "main": "index.mjs",
+  "scripts": {
+    "start": "zx index.mjs"
+  },
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "zx": "^8.6.1"
+  }
+}
