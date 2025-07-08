@@ -22,6 +22,61 @@ function writeJSONFileSorted(filePath, jsonObj) {
     fs.writeFileSync(filePath, formatted, 'utf-8')
 }
 
+function getDictionaryEntrySegment(key) {
+    if (!key.startsWith('DictionaryEntry.')) {
+        return null
+    }
+    const segments = key.split('.')
+    return segments.length > 1 ? segments[1] : null
+}
+
+function processSingleKey(srcKey, srcJson, destJson, matchedDestKeys) {
+    const srcSegment = getDictionaryEntrySegment(srcKey)
+    
+    // Guard: Handle regular keys (non-DictionaryEntry)
+    if (!srcSegment) {
+        destJson[srcKey] = srcJson[srcKey]
+        return
+    }
+
+    // Process DictionaryEntry keys
+    const matchingDestKey = findMatchingDestinationKey(srcSegment, destJson, matchedDestKeys)
+    
+    // Guard: No matching segment found, add source key
+    if (!matchingDestKey) {
+        destJson[srcKey] = srcJson[srcKey]
+        return
+    }
+
+    // Update matching destination key
+    updateDestinationKey(matchingDestKey, srcKey, srcJson, destJson, matchedDestKeys, srcSegment)
+}
+
+function findMatchingDestinationKey(srcSegment, destJson, matchedDestKeys) {
+    for (const destKey of Object.keys(destJson)) {
+        // Guard: Skip already matched keys
+        if (matchedDestKeys.has(destKey)) continue
+        
+        const destSegment = getDictionaryEntrySegment(destKey)
+        
+        // Guard: Skip non-matching segments
+        if (!destSegment || destSegment !== srcSegment) continue
+        
+        return destKey
+    }
+    return null
+}
+
+function updateDestinationKey(destKey, srcKey, srcJson, destJson, matchedDestKeys, segment) {
+    // Guard: Only update if values differ
+    if (destJson[destKey] !== srcJson[srcKey]) {
+        console.log(`Dictionary match: "${destKey}" (${segment}) updated with value from "${srcKey}"`)
+        destJson[destKey] = srcJson[srcKey]
+    }
+    
+    matchedDestKeys.add(destKey)
+}
+
 function walkDir(dir) {
     let files = []
     for (const file of fs.readdirSync(dir)) {
@@ -52,7 +107,7 @@ async function main() {
     for (const srcFile of sourceFiles) {
         const relativePath = path.relative(sourceDir, srcFile)
 
-        // 🔥 Check disallow patterns
+        // Guard: Skip disallowed patterns
         if (disallow.some(pattern => pattern.test(relativePath))) {
             console.log(`Skipped (disallowed): ${relativePath}`)
             continue
@@ -60,22 +115,25 @@ async function main() {
 
         const destFile = path.join(destDir, relativePath)
 
+        // Guard: Handle new files
         if (!fs.existsSync(destFile)) {
             fs.mkdirSync(path.dirname(destFile), { recursive: true })
             fs.copyFileSync(srcFile, destFile)
             console.log(`Copied new file: ${relativePath}`)
-        } else {
-            const srcJson = readJSONFile(srcFile)
-            const destJson = readJSONFile(destFile)
-
-            // Merge keys: overwrite existing keys and add new ones
-            for (const key of Object.keys(srcJson)) {
-                destJson[key] = srcJson[key]
-            }
-
-            writeJSONFileSorted(destFile, destJson)
-            console.log(`Synchronized: ${relativePath}`)
+            continue
         }
+
+        // Process existing files
+        const srcJson = readJSONFile(srcFile)
+        const destJson = readJSONFile(destFile)
+        const matchedDestKeys = new Set()
+
+        for (const srcKey of Object.keys(srcJson)) {
+            processSingleKey(srcKey, srcJson, destJson, matchedDestKeys)
+        }
+
+        writeJSONFileSorted(destFile, destJson)
+        console.log(`Synchronized: ${relativePath}`)
     }
 
     console.log('Synchronization complete.')
